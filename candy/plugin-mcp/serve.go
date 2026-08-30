@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -233,6 +234,21 @@ func resolveCharlyBin() (string, error) {
 func computeProjectPrefix(noDefaultRepo bool) []string {
 	if _, err := os.Stat(projectFileName); err == nil {
 		return nil
+	}
+	// CHARLY_PROJECT_DIR is how a container venue points at its project — pod-charly-mcp sets
+	// it to /workspace and bind-mounts the project there. It is NOT the plugin's cwd (supervisord
+	// starts the service elsewhere), so the cwd stat above misses it, and every project tool then
+	// took the --repo default branch below: a git ls-remote to github.com from INSIDE the venue.
+	// In a venue with no DNS that is a hard failure of `version`, `box.list.boxes` and friends,
+	// for a project that is sitting right there on disk.
+	//
+	// The prefix is an explicit --dir rather than leaving it to the env, because forkCharly
+	// deliberately strips CHARLY_PROJECT_DIR from the child (childCharlyEnv) so it cannot
+	// conflict with --repo; an explicit flag survives that and states the intent at the call.
+	if dir := strings.TrimSpace(os.Getenv("CHARLY_PROJECT_DIR")); dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, projectFileName)); err == nil {
+			return []string{"--dir", dir}
+		}
 	}
 	if noDefaultRepo {
 		return nil
