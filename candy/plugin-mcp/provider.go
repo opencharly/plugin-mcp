@@ -35,11 +35,15 @@ type mcpEndpoint struct {
 // mcpEnv is the plugin-side decode of the CheckEnv the host ships as Operation.Env for a `mcp:`
 // check step (provider_checkenv.go). Box/Mode mirror the shared CheckEnv; ContainerName is the
 // host-authoritative running container name (for the {{.ContainerName}} template + pod-aware
-// rewrite). The endpoint is no longer pre-shipped — the plugin resolves it via the reverse-legs.
+// rewrite); McpProvide is the deployment's mcp_provide declarations the host threads into the
+// env for VM/host venues (P4 substrate neutrality — no podman-inspectable OCI label there), the
+// container venue's declarations ride the ai.opencharly.mcp_provide label instead. The endpoint
+// is no longer pre-shipped — the plugin resolves it via the reverse-legs.
 type mcpEnv struct {
-	Box           string `json:"box"`
-	Mode          string `json:"mode"` // "live" | "box"
-	ContainerName string `json:"container_name"`
+	Box           string                 `json:"box"`
+	Mode          string                 `json:"mode"` // "live" | "box"
+	ContainerName string                 `json:"container_name"`
+	McpProvide    []spec.CandyMCPProvide `json:"mcp_provide"`
 }
 
 type provider struct{ pb.UnimplementedProviderServer }

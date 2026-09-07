@@ -14,29 +14,36 @@ import (
 
 // resolve.go builds the mcp check endpoint from the GENERIC reverse-legs, replacing the former
 // host-side mcp preresolver: the plugin reads the deployment's ai.opencharly.mcp_provide
-// OCI label (cc.ResolveImageLabel) + maps its published port to a host-routable address
+// OCI label (cc.ResolveImageLabel), falling back to the check env's mcp_provide declarations
+// (spec.CheckEnv — the P4 substrate-neutral source for VM/host venues, which have no
+// podman-inspectable OCI label), + maps the picked server's port to a host-routable address
 // (cc.ResolveEndpoint). The host owns the podman engine / OCI metadata / port-mapping machinery;
 // the plugin decides WHAT to resolve and does the pure template / pod-aware / pick logic.
 
 // mcpProvideLabel is the OCI label carrying a deployment's declared mcp_provide servers (a JSON
-// array of spec.CandyMCPProvide). Mirrors charly's labels.go LabelMCPProvide.
+// array of spec.CandyMCPProvide). Mirrors charly's labels.go LabelMCPProvide. The container
+// venue's declarations ride this label; a VM/host venue has no podman-inspectable label, so the
+// declarations arrive in the check env instead (spec.CheckEnv.MCPProvide — P4 substrate
+// neutrality).
 const mcpProvideLabel = "ai.opencharly.mcp_provide"
 
 // resolveMcpEndpoint resolves the mcp check context. It returns (nil, "") when the deployment
 // declares no mcp_provides (a hard fail, mirroring the former host behaviour, surfaced by the
 // caller). For `servers` only the Entries are filled (no dial); every other method also picks a
 // single server and rewrites its container-network URL to a host-routable one.
+//
+// The declared servers come from the deployment's ai.opencharly.mcp_provide OCI label when that
+// venue supplies one (container). When the label is absent/empty OR the label leg cannot inspect
+// the venue (a VM/host deployment has no podman-inspectable image label) the check env's
+// mcp_provide declarations — threaded by the host from the deployment's box config — are the
+// fallback (P4 substrate neutrality). That env path skips the endpoint rewrite for a host-local
+// 127.0.0.1 URL (already host-reachable; a VM/host server's published port lands on the check
+// host's own loopback) and rewrites everything else via cc.ResolveEndpoint, exactly like the vnc
+// verb's pod+VM endpoints.
 func resolveMcpEndpoint(ctx context.Context, cc kit.CheckContext, env *mcpEnv, method, wantName string) (*mcpEndpoint, error) {
-	raw, err := cc.ResolveImageLabel(ctx, mcpProvideLabel)
+	provides, fromEnv, err := effectiveMCPProvides(ctx, cc, env)
 	if err != nil {
 		return nil, err
-	}
-	if raw == "" {
-		return nil, fmt.Errorf("box %q declares no mcp_provides", env.Box)
-	}
-	var provides []spec.CandyMCPProvide
-	if err := json.Unmarshal([]byte(raw), &provides); err != nil {
-		return nil, fmt.Errorf("parsing %s label: %w", mcpProvideLabel, err)
 	}
 	if len(provides) == 0 {
 		return nil, fmt.Errorf("box %q declares no mcp_provides", env.Box)
@@ -64,14 +71,61 @@ func resolveMcpEndpoint(ctx context.Context, cc kit.CheckContext, env *mcpEnv, m
 	if err != nil {
 		return nil, err
 	}
-	rewritten, err := rewriteURLViaEndpoint(ctx, cc.ResolveEndpoint, entry.URL, env.ContainerName)
-	if err != nil {
-		return nil, err
+	rewritten := entry.URL
+	// A host-local 127.0.0.1 URL declared in the env is already host-reachable (the VM/host
+	// server's published port lands on the check host's own loopback) — no rewrite. The
+	// container label path stays unchanged: container-network URLs (incl. loopback inside the
+	// container) always go through ResolveEndpoint. Env URLs with a non-loopback host go through
+	// ResolveEndpoint too (a VM's forwarded port, the vnc verb's pod+VM pattern).
+	if !(fromEnv && isLoopbackURL(entry.URL)) {
+		rewritten, err = rewriteURLViaEndpoint(ctx, cc.ResolveEndpoint, entry.URL, env.ContainerName)
+		if err != nil {
+			return nil, err
+		}
 	}
 	ep.URL = rewritten
 	ep.Transport = entry.Transport
 	ep.Name = entry.Name
 	return ep, nil
+}
+
+// effectiveMCPProvides returns the deployment's mcp_provide declarations and whether they came
+// from the check env (fromEnv — a VM/host venue) rather than the container OCI label. The label
+// path is authoritative when the label carries entries; an absent/empty label falls back to the
+// env's declarations. A label-leg failure only falls back too — the plugin-check leg refuses
+// non-container venues with "container for %s is not running", the exact P4 case — and is
+// propagated when the env has nothing to stand on (a genuine resolution failure must not be
+// masked).
+func effectiveMCPProvides(ctx context.Context, cc kit.CheckContext, env *mcpEnv) ([]spec.CandyMCPProvide, bool, error) {
+	raw, labelErr := cc.ResolveImageLabel(ctx, mcpProvideLabel)
+	if labelErr == nil && raw != "" {
+		var labelProvides []spec.CandyMCPProvide
+		if err := json.Unmarshal([]byte(raw), &labelProvides); err != nil {
+			return nil, false, fmt.Errorf("parsing %s label: %w", mcpProvideLabel, err)
+		}
+		if len(labelProvides) > 0 {
+			return labelProvides, false, nil
+		}
+		// A present-but-empty label is treated as absent — fall through to the env.
+	}
+	if labelErr != nil && len(env.McpProvide) == 0 {
+		return nil, false, labelErr
+	}
+	return env.McpProvide, true, nil
+}
+
+// isLoopbackURL reports whether raw's host is loopback (127.0.0.1 / localhost) — a host-local
+// URL the check host dials as-is.
+func isLoopbackURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	switch u.Hostname() {
+	case "127.0.0.1", "localhost":
+		return true
+	}
+	return false
 }
 
 // resolveContainerNameTemplate substitutes the only placeholder charly emits into mcp_provide
