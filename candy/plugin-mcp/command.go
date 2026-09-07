@@ -38,7 +38,7 @@ type McpCmdGroup struct {
 // threaded to every charly fork/exec as a managed prefix (serve.go computeProjectPrefix).
 // --no-default-repo stays, opting out of the auto-fallback to opencharly/charly.
 type McpServeCmd struct {
-	Listen        string `name:"listen" default:":18765" help:"TCP listen address for Streamable HTTP transport"`
+	Listen        string `name:"listen" default:"127.0.0.1:18765" help:"TCP listen address for Streamable HTTP transport (default 127.0.0.1 — loopback only; pass --listen 0.0.0.0:18765 to bind all interfaces)"`
 	Path          string `name:"path" default:"/mcp" help:"HTTP path prefix for the MCP endpoint"`
 	Stdio         bool   `name:"stdio" help:"Use stdio transport instead of HTTP (for editor/LLM integration)"`
 	ReadOnly      bool   `name:"read-only" help:"Skip registration of tools that mutate state"`
