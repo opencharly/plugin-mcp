@@ -221,7 +221,11 @@ func resolveCharlyBin() (string, error) {
 }
 
 // computeProjectPrefix replaces the original bootstrapProject's chdir. It returns the args
-// prefix prepended to EVERY charly fork/exec so children resolve the project:
+// prefix prepended to EVERY charly fork/exec so children resolve the project. P2 (§3.7): the
+// environment is authoritative — the fallback prefix NEVER fights it:
+//   - CHARLY_PROJECT_DIR or CHARLY_PROJECT_REPO set → no prefix: the child inherits the env
+//     var and resolves it (env wins by precedence). NEVER pass --repo while --dir is set —
+//     they are mutually exclusive in the charly CLI;
 //   - charly.yml in cwd → no prefix (children inherit the plugin's cwd and find it);
 //   - --no-default-repo (and no local charly.yml) → no prefix: still serve, but
 //     project-dependent tools error at call time (the child reports "no project");
@@ -231,6 +235,9 @@ func resolveCharlyBin() (string, error) {
 // delegates the resolution to the child charly — the fork/exec analogue of the original's
 // chdir-into-the-cache.
 func computeProjectPrefix(noDefaultRepo bool) []string {
+	if os.Getenv(spec.ProjectDirEnv) != "" || os.Getenv(spec.ProjectRepoEnv) != "" {
+		return nil
+	}
 	if _, err := os.Stat(projectFileName); err == nil {
 		return nil
 	}
@@ -287,7 +294,7 @@ func fetchCLIModel(bin string) (*spec.CLIModel, error) {
 func runCLIModel(bin string, prefix []string) (*spec.CLIModel, error) {
 	argv := append(append([]string{}, prefix...), "__cli-model")
 	cmd := exec.Command(bin, argv...)
-	cmd.Env = childCharlyEnv() // clear CHARLY_PROJECT_DIR so --repo default doesn't conflict
+	cmd.Env = childCharlyEnv() // P2: full environment — the child inherits CHARLY_PROJECT_DIR/REPO verbatim
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
@@ -597,19 +604,16 @@ func sortedKeys(m map[string]any) []string {
 // original captureAndRun (in-process kctx.Run with os.Stdout redirection) — fork/exec
 // isolates every call's streams, so the whole os.Stdout/os.Stderr-capture-by-pointer
 // machinery (and its runMu serialization) is gone.
-// childCharlyEnv is os.Environ() with CHARLY_PROJECT_DIR / CHARLY_PROJECT_REPO stripped. The
-// project context for every charly child is driven EXPLICITLY by the computeProjectPrefix argv
-// (--repo default, or the inherited cwd when /workspace carries a charly.yml); leaving
-// CHARLY_PROJECT_DIR set (the deployed container sets it to /workspace) makes charly read it as
-// --dir, which COLLIDES with the --repo prefix ("--repo and --dir are mutually exclusive").
-// Shared by forkCharly (tool calls) AND runCLIModel (the startup __cli-model fetch) — BOTH must
-// clear it, or the model fetch fails, fetchCLIModel downgrades to the no-prefix path, and every
-// project-dependent tool (box.*) then runs without --repo default and errors "no charly.yml".
+// childCharlyEnv is the FULL environment — P2: the environment is authoritative, and no
+// CHARLY env var is ever stripped from a child. A child charly inherits every CHARLY_*
+// variable (CHARLY_PROJECT_DIR / CHARLY_PROJECT_REPO included): the user's environment IS
+// their intent, and the config resolution precedence (env → flag → --repo → cwd) already
+// makes the env win when set. The project prefix (computeProjectPrefix) applies only when
+// the environment expresses no project intent, so it can never fight an inherited env var.
+// Shared by forkCharly (tool calls) AND runCLIModel (the startup __cli-model fetch) — both
+// inherit the same full environment.
 func childCharlyEnv() []string {
-	// One implementation, shared with sdk/deploykit's packaging child (R3). Both names must go
-	// together — they are mutually exclusive in the CLI — which is exactly the invariant the
-	// shared helper exists to hold.
-	return spec.ChildProjectEnv(os.Environ(), "")
+	return os.Environ()
 }
 
 func forkCharly(ctx context.Context, bin string, argv []string) (stdout, stderr string, err error) {
