@@ -1,7 +1,5 @@
-version: 2026.232.0520
 plugin-mcp:
     candy:
-        version: 2026.178.1430
         description: |-
             OUT-OF-TREE charly plugin serving TWO MCP capabilities — a standalone Go
             module (go.mod + main.go) that speaks the Model Context Protocol over
