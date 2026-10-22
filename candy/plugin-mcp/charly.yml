@@ -64,3 +64,14 @@ plugin-mcp:
               context:
                 - build
               command: "true"
+
+# The `charly-mcp-cmd` skill, authored beside the command it documents.
+# ROUTING-ONLY: name/family/owner plus the `triggers:` that generate its DISPATCHER.md
+# row — the prose is `.agents/skills/charly-mcp-cmd/SKILL.md` at this repo's root, never an inline
+# `description:`/`content:` (an inline body that disagrees with its file is a hard error in
+# the marketplace generator).
+charly-mcp-cmd-skill:
+    skill:
+        name: charly-mcp-cmd
+        family: build
+        owner: plugin-mcp
