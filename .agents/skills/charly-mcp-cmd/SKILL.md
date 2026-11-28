@@ -445,10 +445,8 @@ The server registers destructive tools with `DestructiveHint: true` rather than 
 - `/charly-check:wl` — sibling (Wayland desktop control).
 - `/charly-check:dbus` — sibling (D-Bus calls/notifications).
 - `/charly-check:vnc` — sibling (VNC framebuffer / input).
-- `/charly-jupyter:jupyter-mcp` — the FastMCP server implementation layer (the notebook tools over CRDT: notebook_*/cell_* + notebook_list_users + room_list; clients do not manage CRDT rooms — the server auto-attaches).
-- `/charly-hermes:hermes` — a consumer (`mcp_accept: jupyter, chrome-devtools`); use the `mcp:` check verb (`charly check live <consumer> --filter mcp`) to verify the services hermes discovers are actually alive.
-- `/charly-openwebui:openwebui` — another consumer (`mcp_accept: jupyter, chrome-devtools`).
-- `/charly-jupyter:jupyter` — images bundling `jupyter-mcp`; `charly check live <image> --filter mcp` exercises the verb end-to-end.
+- `/charly-hermes:hermes` — a consumer (`mcp_accept: chrome-devtools`); use the `mcp:` check verb (`charly check live <consumer> --filter mcp`) to verify the services hermes discovers are actually alive.
+- `/charly-openwebui:openwebui` — another consumer (`mcp_accept: chrome-devtools`).
 - `/charly-internals:go` — host-side implementation map: `check_endpoint_resolve.go` (the host-endpoint reverse-legs — `resolveImageLabel` + `resolveVerbEndpoint` the mcp plugin pulls), `cli_model_cmd.go` (the `charly __cli-model` seam the server consumes; the server itself is `candy/plugin-mcp/serve.go`), `candy/plugin-box/validate_check.go` (op-level deploy-scope enforcement; the `mcp` method-name + required-modifier checks live in `candy/plugin-mcp` + the CUE `#Op` enum). The MCP CLIENT (the MCP methods + the go-sdk dial) lives out-of-process in `candy/plugin-mcp` — see `/charly-internals:plugin`.
 - `/charly-coder:charly-mcp` — the deployment layer that wires `charly mcp serve` into an image via supervisord. Includes the `/workspace` bind-mount (volume NAME `project`) + `CHARLY_PROJECT_DIR` env var pattern for build-mode tools.
 - `/charly-tools:charly` — the underlying binary layer; required by `charly-mcp`.
